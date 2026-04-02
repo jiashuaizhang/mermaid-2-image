@@ -15,6 +15,8 @@ const previewSvg = ref('')
 const previewError = ref('')
 const loading = ref(false)
 const exportLoading = ref(false)
+/** 'svg' | 'png' — 默认 SVG，矢量不糊 */
+const exportFormat = ref('svg')
 
 const baseMermaidConfig = {
   startOnLoad: false,
@@ -105,7 +107,22 @@ async function svgToPng(svgString) {
   })
 }
 
-async function exportPng() {
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+function svgStringToBlob(svgString) {
+  const withDecl = svgString.trimStart().startsWith('<?xml')
+    ? svgString
+    : `<?xml version="1.0" encoding="UTF-8"?>\n${svgString}`
+  return new Blob([withDecl], { type: 'image/svg+xml;charset=utf-8' })
+}
+
+async function exportDiagram() {
   if (!previewSvg.value) {
     ElMessage.warning('请先输入并成功渲染 Mermaid 代码')
     return
@@ -127,13 +144,16 @@ async function exportPng() {
     const { svg } = await mermaid.render('mermaid-export-' + Date.now(), code)
     mermaid.initialize(baseMermaidConfig)
 
-    const blob = await svgToPng(svg)
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `mermaid-${Date.now()}.png`
-    a.click()
-    URL.revokeObjectURL(a.href)
-    ElMessage.success('已导出 PNG')
+    const ts = Date.now()
+    if (exportFormat.value === 'svg') {
+      const blob = svgStringToBlob(svg)
+      downloadBlob(blob, `mermaid-${ts}.svg`)
+      ElMessage.success('已导出 SVG')
+    } else {
+      const blob = await svgToPng(svg)
+      downloadBlob(blob, `mermaid-${ts}.png`)
+      ElMessage.success('已导出 PNG')
+    }
   } catch (e) {
     ElMessage.error(e.message || '导出失败')
   } finally {
@@ -150,8 +170,8 @@ watch(source, () => {
 <template>
   <div class="page">
     <header class="header">
-      <h1 class="title">Mermaid → PNG</h1>
-      <p class="subtitle">编辑或粘贴 Mermaid 源码，实时预览并导出为 PNG</p>
+      <h1 class="title">Mermaid 导出</h1>
+      <p class="subtitle">编辑或粘贴 Mermaid 源码，实时预览；默认导出 SVG（矢量清晰），也可选 PNG</p>
     </header>
 
     <div class="layout">
@@ -172,15 +192,26 @@ watch(source, () => {
         <el-card class="card preview-card" shadow="never">
           <template #header>
             <span>预览</span>
-            <el-button
-              type="primary"
-              :loading="exportLoading"
-              :disabled="!previewSvg"
-              class="export-btn"
-              @click="exportPng"
-            >
-              导出 PNG
-            </el-button>
+            <div class="export-actions">
+              <el-button
+                type="primary"
+                :loading="exportLoading"
+                :disabled="!previewSvg"
+                class="export-btn"
+                @click="exportDiagram"
+              >
+                导出
+              </el-button>
+              <el-select
+                v-model="exportFormat"
+                class="export-format-select"
+                :disabled="exportLoading"
+                aria-label="导出格式"
+              >
+                <el-option label="SVG" value="svg" />
+                <el-option label="PNG" value="png" />
+              </el-select>
+            </div>
           </template>
           <div class="preview-wrap">
             <div v-if="loading" class="preview-loading">
@@ -264,8 +295,23 @@ watch(source, () => {
   top: 1.5rem;
 }
 
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .export-btn {
   font-weight: 500;
+}
+
+.export-format-select {
+  width: 100px;
+}
+
+.export-format-select :deep(.el-select__wrapper) {
+  background: var(--bg-input) !important;
+  border-color: var(--border) !important;
 }
 
 .preview-wrap {
